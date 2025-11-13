@@ -1,0 +1,37 @@
+digraph BehaviorTree {
+  rankdir=TB;
+  node [fontname="Arial"];
+  node_1 [label="SafetyCheckProtocol\n(Sequence)", fillcolor="lightblue", style=filled, shape=ellipse];
+  node_2 [label="SetupLocalization\n(Action)", fillcolor="lightgray", style=filled, shape=box];
+  node_1 -> node_2;
+  node_3 [label="DetectPile\n(Action)", fillcolor="lightgray", style=filled, shape=box];
+  node_1 -> node_3;
+  node_4 [label="SegmentProbingArea\n(Action)", fillcolor="lightgray", style=filled, shape=box];
+  node_1 -> node_4;
+  node_5 [label="ProbeSequence\n(Selector)", fillcolor="lightgreen", style=filled, shape=ellipse];
+  node_1 -> node_5;
+  node_6 [label="PrimaryProbe\n(Sequence)", fillcolor="lightblue", style=filled, shape=ellipse];
+  node_5 -> node_6;
+  node_7 [label="ApproachProbingPoint\n(Action)", fillcolor="lightgray", style=filled, shape=box];
+  node_6 -> node_7;
+  node_8 [label="ExecuteProbe\n(Action)", fillcolor="lightgray", style=filled, shape=box];
+  node_6 -> node_8;
+  node_9 [label="RetractSafely\n(Action)", fillcolor="lightgray", style=filled, shape=box];
+  node_6 -> node_9;
+  node_10 [label="SelectFallbackPoint\n(Action)", fillcolor="lightgray", style=filled, shape=box];
+  node_5 -> node_10;
+  node_11 [label="AnalyzeDeformation\n(Action)", fillcolor="lightgray", style=filled, shape=box];
+  node_1 -> node_11;
+  node_12 [label="Inverter\n(Inverter)", fillcolor="lightcoral", style=filled, shape=ellipse];
+  node_1 -> node_12;
+  node_13 [label="CheckStability\n(Action)", fillcolor="lightgray", style=filled, shape=box];
+  node_12 -> node_13;
+  node_14 [label="ResponseHandling\n(Parallel)", fillcolor="lightyellow", style=filled, shape=ellipse];
+  node_1 -> node_14;
+  node_15 [label="AlertOperator\n(Action)", fillcolor="lightgray", style=filled, shape=box];
+  node_14 -> node_15;
+  node_16 [label="RecordData\n(Action)", fillcolor="lightgray", style=filled, shape=box];
+  node_14 -> node_16;
+  node_17 [label="ResetSystem\n(Action)", fillcolor="lightgray", style=filled, shape=box];
+  node_1 -> node_17;
+}

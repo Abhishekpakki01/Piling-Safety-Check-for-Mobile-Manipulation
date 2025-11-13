@@ -1,0 +1,45 @@
+<root BTCPP_format="4" main_tree_to_execute="SafetyCheckProtocol">
+  <TreeNodesModel>
+    <Action ID="SetupLocalization"/>
+    <Action ID="DetectPile"/>
+    <Action ID="SegmentProbingArea"/>
+    <Action ID="ApproachProbingPoint"/>
+    <Action ID="ExecuteProbe"/>
+    <Action ID="RetractSafely"/>
+    <Action ID="SelectFallbackPoint"/>
+    <Action ID="AnalyzeDeformation"/>
+    <Action ID="CheckStability"/>
+    <Action ID="AlertOperator"/>
+    <Action ID="RecordData"/>
+    <Action ID="ResetSystem"/>
+  </TreeNodesModel>
+
+  <BehaviorTree ID="SafetyCheckProtocol">
+    <Sequence name="SafetyCheckProtocol">
+      <Action ID="SetupLocalization"/>
+      <Action ID="DetectPile"/>
+      <Action ID="SegmentProbingArea"/>
+
+      <Selector name="ProbeSequence">
+        <Sequence name="PrimaryProbe">
+          <Action ID="ApproachProbingPoint"/>
+          <Action ID="ExecuteProbe"/>
+          <Action ID="RetractSafely"/>
+        </Sequence>
+        <Action ID="SelectFallbackPoint"/>
+      </Selector>
+
+      <Action ID="AnalyzeDeformation"/>
+      <Inverter>
+        <Action ID="CheckStability"/>
+      </Inverter>
+
+      <Parallel name="ResponseHandling" success_threshold="all">
+        <Action ID="AlertOperator"/>
+        <Action ID="RecordData"/>
+      </Parallel>
+
+      <Action ID="ResetSystem"/>
+    </Sequence>
+  </BehaviorTree>
+</root>
