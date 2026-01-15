@@ -1,70 +1,112 @@
-import cv2
 import os
-import glob
-import time
+import cv2
+import numpy as np
+from PIL import Image
+from base64 import b64decode, b64encode
+from google.colab.output import eval_js
+from IPython.display import display, Javascript
 from ultralytics import YOLO
-from google.colab.patches import cv2_imshow
-from IPython.display import clear_output
 
-def run_noodle_test(image_folder_path):
-    # 1. Initialize YOLO (Logic from validate_camera.py)
-    print("⚡ Loading YOLO model...")
-    try:
-        # We use 'cpu' to ensure stability in all Colab runtimes
-        model = YOLO("yolo11n.pt")
-        model.to("cpu")
-        print("✅ YOLO Model Loaded Successfully.\n")
-    except Exception as e:
-        print(f"❌ Failed to load model: {e}")
-        return
+# 1. LOAD MODEL
+# Replace "yolo11n.pt" with the path to your best-trained weights (e.g., "best.pt")
+model = YOLO("yolo11n.pt") 
 
-    # 2. Get list of images
-    # Supports common formats like .jpg, .jpeg, and .png
-    extensions = ['*.jpg', '*.jpeg', '*.png']
-    image_files = []
-    for ext in extensions:
-        image_files.extend(glob.glob(os.path.join(image_folder_path, ext)))
+def start_noodle_detection():
+    """Starts a live webcam stream with YOLO noodle detection overlay."""
+    js = Javascript('''
+    var video;
+    var div = null;
+    var stream;
+    var captureCanvas;
+    var labelElement;
+
+    async function initWebcam() {
+        div = document.createElement('div');
+        video = document.createElement('video');
+        video.style.display = 'block';
+        video.width = 640;
+        video.height = 480;
+        
+        // Request browser camera permission
+        stream = await navigator.mediaDevices.getUserMedia({video: true});
+        document.body.appendChild(div);
+        div.appendChild(video);
+        video.srcObject = stream;
+        await video.play();
+
+        // Overlay canvas for drawing the noodle bounding boxes
+        labelElement = document.createElement('canvas');
+        labelElement.width = 640;
+        labelElement.height = 480;
+        labelElement.style.position = 'absolute';
+        labelElement.style.left = video.offsetLeft + 'px';
+        labelElement.style.top = video.offsetTop + 'px';
+        div.appendChild(labelElement);
+
+        captureCanvas = document.createElement('canvas');
+        captureCanvas.width = 640;
+        captureCanvas.height = 480;
+    }
+
+    async function streamFrame() {
+        const ctx = captureCanvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, 640, 480);
+        const imgData = captureCanvas.toDataURL('image/jpeg', 0.8);
+        
+        // Pass the frame to the Python function for YOLO inference
+        const response = await google.colab.kernel.invokeFunction(
+            'notebook.detect_noodle', [imgData], {});
+        
+        // Clear and draw new boxes on the overlay
+        const overlayCtx = labelElement.getContext('2d');
+        overlayCtx.clearRect(0, 0, 640, 480);
+        
+        response.data.boxes.forEach(box => {
+            overlayCtx.strokeStyle = "#00FF00"; // Green Box
+            overlayCtx.lineWidth = 3;
+            overlayCtx.strokeRect(box.x, box.y, box.w, box.h);
+            overlayCtx.fillStyle = "#00FF00";
+            overlayCtx.fillText(box.label, box.x, box.y > 20 ? box.y - 5 : 10);
+        });
+        
+        requestAnimationFrame(streamFrame);
+    }
+
+    initWebcam().then(streamFrame);
+    ''')
+    display(js)
+
+def detect_noodle_callback(img_b64):
+    """Python function that processes a single frame and returns detections."""
+    # Decode the base64 image from JavaScript
+    _, encoded = img_b64.split(",")
+    data = b64decode(encoded)
+    nparr = np.frombuffer(data, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+    # Run YOLO Inference (optimized for CPU if necessary)
+    results = model(img, verbose=False)
     
-    image_files.sort() # Ensure they are in order
-    
-    if not image_files:
-        print(f"❌ No images found in {image_folder_path}. Please check your path.")
-        return
+    found_boxes = []
+    for r in results:
+        for box in r.boxes:
+            x1, y1, x2, y2 = box.xyxy[0].tolist()
+            conf = box.conf[0].item()
+            cls = int(box.cls[0].item())
+            label = f"{model.names[cls]} {conf:.2f}"
+            
+            found_boxes.append({
+                'x': x1, 'y': y1, 
+                'w': x2 - x1, 'h': y2 - y1,
+                'label': label
+            })
 
-    print(f"🚀 Starting test on {len(image_files)} images...")
-    time.sleep(2)
+    return {'boxes': found_boxes}
 
-    # 3. Process loop
-    for i, img_path in enumerate(image_files):
-        # Read the frame (Replacement for cap.read())
-        frame = cv2.imread(img_path)
-        
-        if frame is None:
-            continue
+# Register the callback so JavaScript can 'talk' to Python
+import google.colab.kernel
+google.colab.kernel.register_callback('notebook.detect_noodle', detect_noodle_callback)
 
-        # Run YOLO Inference (Exact logic from validate_camera.py)
-        # We set verbose=False to keep the output clean
-        results = model(frame, verbose=False, device="cpu")
-        
-        # Draw boxes on the frame
-        for r in results:
-            annotated_frame = r.plot() 
-
-        # --- Colab Display Logic ---
-        # Clear the previous image to simulate a "video feed"
-        clear_output(wait=True) 
-        
-        print(f"Processing Image {i+1}/{len(image_files)}: {os.path.basename(img_path)}")
-        
-        # Replacement for cv2.imshow
-        cv2_imshow(annotated_frame) 
-        
-        # Pause briefly so you can inspect the detection
-        time.sleep(0.1) 
-
-    print("\n✅ All images processed!")
-
-# --- EXECUTION ---
-# Update this path to wherever you uploaded your 50 images
-image_folder = '/content/noodle_images' 
-run_noodle_test(image_folder)
+# Start the application
+print("🚀 Initializing Live Noodle Detection...")
+start_noodle_detection()
