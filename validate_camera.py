@@ -1,109 +1,70 @@
-#!/usr/bin/env python3
 import cv2
+import os
+import glob
 import time
-import argparse
-import sys
-import numpy as np
+from ultralytics import YOLO
+from google.colab.patches import cv2_imshow
+from IPython.display import clear_output
 
-def check_yolo_availability():
-    """Checks if YOLO is installed and can be loaded."""
+def run_noodle_test(image_folder_path):
+    # 1. Initialize YOLO (Logic from validate_camera.py)
+    print("⚡ Loading YOLO model...")
     try:
-        from ultralytics import YOLO
-        # FORCE CPU MODE to avoid GTX 1050 / PyTorch errors
-        print("⚡ Loading YOLO model on CPU...")
+        # We use 'cpu' to ensure stability in all Colab runtimes
         model = YOLO("yolo11n.pt")
         model.to("cpu")
-        print("✅ YOLO is installed and model loaded (CPU Mode).")
-        return model
-    except ImportError:
-        print("⚠️  ultralytics not installed. Skipping AI test.")
-        return None
+        print("✅ YOLO Model Loaded Successfully.\n")
     except Exception as e:
-        print(f"⚠️  YOLO model load failed: {e}")
-        return None
-
-def main():
-    parser = argparse.ArgumentParser(description="Camera Health & AI Readiness Check")
-    parser.add_argument("--source", type=int, default=0, help="Camera Index (default: 0)")
-    parser.add_argument("--no-ai", action="store_true", help="Skip YOLO inference test")
-    args = parser.parse_args()
-
-    print("="*60)
-    print(f"🎥 CAMERA DIAGNOSTIC TOOL (Source: {args.source})")
-    print("="*60)
-
-    # 1. ATTEMPT CONNECTION
-    print(f"[1/4] Connecting to camera index {args.source}...")
-    cap = cv2.VideoCapture(args.source)
-
-    # --- FIX 1: FORCE MJPG (Fixes WSL 'select timeout' error) ---
-    fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-    cap.set(cv2.CAP_PROP_FOURCC, fourcc)
-    # ------------------------------------------------------------
-
-    if not cap.isOpened():
-        print(f"❌ FATAL: Could not open camera {args.source}.")
-        print("   Troubleshooting:")
-        print("   - Is it plugged in?")
-        print("   - Did you bind/attach it via usbipd?")
+        print(f"❌ Failed to load model: {e}")
         return
 
-    # Get Reported Resolution
-    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    print(f"✅ Connection Successful. Native Resolution: {w}x{h}")
-
-    # 2. AI SETUP
-    model = None
-    if not args.no_ai:
-        print("\n[2/4] Checking AI Readiness...")
-        model = check_yolo_availability()
-
-    # 3. PERFORMANCE LOOP
-    print("\n[3/4] Starting Video Stream (Click window and press 'q' to quit)...")
+    # 2. Get list of images
+    # Supports common formats like .jpg, .jpeg, and .png
+    extensions = ['*.jpg', '*.jpeg', '*.png']
+    image_files = []
+    for ext in extensions:
+        image_files.extend(glob.glob(os.path.join(image_folder_path, ext)))
     
-    frame_count = 0
-    start_time = time.time()
-    fps = 0.0
+    image_files.sort() # Ensure they are in order
     
-    try:
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                print("❌ Error: Failed to read frame.")
-                break
+    if not image_files:
+        print(f"❌ No images found in {image_folder_path}. Please check your path.")
+        return
 
-            # Run YOLO Inference (if enabled)
-            if model:
-                # --- FIX 2: FORCE CPU INFERENCE (Fixes CUDA error) ---
-                results = model(frame, verbose=False, device="cpu")
-                
-                for r in results:
-                    frame = r.plot() # Draw boxes
+    print(f"🚀 Starting test on {len(image_files)} images...")
+    time.sleep(2)
 
-            # Calculate FPS
-            frame_count += 1
-            if frame_count % 30 == 0:
-                elapsed = time.time() - start_time
-                fps = frame_count / elapsed
+    # 3. Process loop
+    for i, img_path in enumerate(image_files):
+        # Read the frame (Replacement for cap.read())
+        frame = cv2.imread(img_path)
+        
+        if frame is None:
+            continue
 
-            # Overlay Stats
-            cv2.putText(frame, f"FPS: {fps:.1f}", (10, 30), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-            cv2.imshow('Camera Health Check', frame)
+        # Run YOLO Inference (Exact logic from validate_camera.py)
+        # We set verbose=False to keep the output clean
+        results = model(frame, verbose=False, device="cpu")
+        
+        # Draw boxes on the frame
+        for r in results:
+            annotated_frame = r.plot() 
 
-            # Exit on 'q' key
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                print("\n🛑 User pressed 'q'. Exiting...")
-                break
+        # --- Colab Display Logic ---
+        # Clear the previous image to simulate a "video feed"
+        clear_output(wait=True) 
+        
+        print(f"Processing Image {i+1}/{len(image_files)}: {os.path.basename(img_path)}")
+        
+        # Replacement for cv2.imshow
+        cv2_imshow(annotated_frame) 
+        
+        # Pause briefly so you can inspect the detection
+        time.sleep(0.1) 
 
-    except KeyboardInterrupt:
-        print("\n🛑 User pressed Ctrl+C. Exiting...")
-    finally:
-        cap.release()
-        cv2.destroyAllWindows()
+    print("\n✅ All images processed!")
 
-    print("✅ Test Complete.")
-
-if __name__ == "__main__":
-    main()
+# --- EXECUTION ---
+# Update this path to wherever you uploaded your 50 images
+image_folder = '/content/noodle_images' 
+run_noodle_test(image_folder)
