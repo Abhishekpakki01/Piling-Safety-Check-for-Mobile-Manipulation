@@ -1,65 +1,56 @@
-#!/usr/bin/env python3
 import cv2
-import time
-import argparse
+import pyrealsense2 as rs
+import numpy as np
+from ultralytics import YOLO
 
-def main():
-    print("="*60)
-    print("🎥 ROBUST CAMERA TEST (Low Bandwidth Mode)")
-    print("="*60)
+# 1. Load your trained model
+model = YOLO('best.pt')
 
-    # 1. Connect to Camera 0
-    cap = cv2.VideoCapture(0)
+# 2. Configure RealSense Pipeline
+pipeline = rs.pipeline()
+config = rs.config()
+config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
 
-    # 2. FORCE LOW BANDWIDTH SETTINGS (Critical for WSL)
-    # Force MJPG (Compressed)
-    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'))
-    # Force Low Resolution (640x480 is standard for webcams)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    # Force Low FPS
-    cap.set(cv2.CAP_PROP_FPS, 15)
+# Start streaming
+pipeline.start(config)
 
-    if not cap.isOpened():
-        print("❌ Could not open camera. Try --source 1")
-        return
+try:
+    while True:
+        # Wait for a coherent pair of frames: depth and color
+        frames = pipeline.wait_for_frames()
+        depth_frame = frames.get_depth_frame()
+        color_frame = frames.get_color_frame()
+        if not depth_frame or not color_frame:
+            continue
 
-    # 3. VERIFY SETTINGS
-    # Check what the camera ACTUALLY accepted
-    actual_w = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
-    actual_h = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
-    actual_fps = cap.get(cv2.CAP_PROP_FPS)
-    actual_format = int(cap.get(cv2.CAP_PROP_FOURCC))
-    # Convert format to string (e.g., 1196444237 -> 'MJPG')
-    fmt_str = "".join([chr((actual_format >> 8 * i) & 0xFF) for i in range(4)])
+        # Convert images to numpy arrays
+        color_image = np.asanyarray(color_frame.get_data())
 
-    print(f"✅ Camera Settings Applied:")
-    print(f"   - Resolution: {actual_w:.0f}x{actual_h:.0f}")
-    print(f"   - FPS: {actual_fps:.0f}")
-    print(f"   - Format: {fmt_str} (Should be MJPG)")
+        # 3. Run YOLO detection (CPU mode as discussed)
+        results = model(color_image, device='cpu', conf=0.5)
 
-    # 4. START STREAM
-    print("\nStarting Stream (Press 'q' to quit)...")
-    try:
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                print("❌ Frame dropped (Timeout).")
-                time.sleep(1) # Wait a bit before retrying
-                continue
+        for r in results:
+            boxes = r.boxes
+            for box in boxes:
+                # Get coordinates
+                x1, y1, x2, y2 = box.xyxy[0]
+                center_x = int((x1 + x2) / 2)
+                center_y = int((y1 + y2) / 2)
 
-            # Success!
-            cv2.putText(frame, f"WSL Camera OK", (10, 30), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-            cv2.imshow('Robust Test', frame)
+                # 4. Get Depth at the center of the bounding box
+                distance = depth_frame.get_distance(center_x, center_y)
 
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-    except KeyboardInterrupt:
-        pass
-    finally:
-        cap.release()
-        cv2.destroyAllWindows()
+                # Draw on the frame
+                cv2.rectangle(color_image, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
+                cv2.putText(color_image, f"Noodle: {distance:.2f}m", (int(x1), int(y1) - 10), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
-if __name__ == "__main__":
-    main()
+        # Show result
+        cv2.imshow('RealSense YOLO Detection', color_image)
+
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+finally:
+    pipeline.stop()
+    cv2.destroyAllWindows()
